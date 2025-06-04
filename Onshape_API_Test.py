@@ -61,26 +61,42 @@ def get_mass_properties_for_part(part_id):
     response.raise_for_status()
     return response.json()
 
+def chunk_list(lst, chunk_size):
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
+
 def main():
     parts = get_parts()
+    print("Individual part volumes and centers of mass:\n")
 
-    print("Individual part volumes:\n")
     for part in parts:
         part_id = part.get("partId")
         name = part.get("name")
 
         mass_properties = get_mass_properties_for_part(part_id)
         volume_array = mass_properties.get("bodies", {}).get(part_id, {}).get("volume", [])
+        centroid_array = mass_properties.get("bodies", {}).get(part_id, {}).get("centroid", [])
+        mass_array = mass_properties.get("bodies", {}).get(part_id, {}).get("mass", [])
+        # Fallback if part_id key doesn't exist in 'bodies'
+        if not volume_array or not centroid_array or not mass_array:
+            # Use the global flattened volume/centroid arrays
+            volume_array = mass_properties.get("volume", [])
+            centroid_array = mass_properties.get("centroid", [])
+            mass_array = mass_properties.get("mass", [])
+        volumes = volume_array if isinstance(volume_array, list) else []
+        centroids = chunk_list(centroid_array, 3) if isinstance(centroid_array, list) else []
 
-        if volume_array and isinstance(volume_array, list):
-            avg_volume_m3 = sum(volume_array) / len(volume_array)
-            volume_mm3 = avg_volume_m3 * 1e9  # Convert to mm³
+        if volumes and centroids and mass_array:
+            volume_mm3 = volumes[0] * 1e9
+            x_mm, y_mm, z_mm = [0.0 if abs(coord * 1000) < 1e-8 else coord * 1000 for coord in centroids[0]]
+            mass_grams = mass_array[0] * 1000
+
             formatted_volume = f"{volume_mm3:.5f} mm³"
+            formatted_com = f"X: {x_mm:.5f} mm Y: {y_mm:.5f} mm Z: {z_mm:.5f} mm"
+            formatted_mass = f"{mass_grams:.5f} g"
+
+            print(f"Part: {name} (ID: {part_id}) -> Volume: {formatted_volume}, Center of Mass: {formatted_com}, Mass: {formatted_mass}")
         else:
-            formatted_volume = "N/A"
-
-        print(f"Part: {name} (ID: {part_id}) -> Volume: {formatted_volume}")
-
+            print(f"Part: {name} (ID: {part_id}) -> Volume: N/A, Center of Mass: N/A, Mass: N/A")
 
 if __name__ == "__main__":
     main()
