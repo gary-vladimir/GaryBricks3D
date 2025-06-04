@@ -1,25 +1,29 @@
-import os, time, hmac, hashlib, base64, random, string
+import os, hmac, hashlib, base64, random, string
 import requests
 from urllib.parse import urlparse
 from email.utils import formatdate
 from dotenv import load_dotenv
+
 load_dotenv()
 
 ACCESS_KEY = os.getenv("ONSHAPE_ACCESS_KEY")
 SECRET_KEY = os.getenv("ONSHAPE_SECRET_KEY")
 
+DOCUMENT_ID = "7b718c0dc3191700cd403fbd"
+WORKSPACE_ID = "8cec3b8c55257ff069fa9f7a"
+ELEMENT_ID = "e255150d11253cea80cbf907"
+
 def _random_nonce(length: int = 25) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(random.choices(alphabet, k=length))
+    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
 def build_headers(method: str, url: str, access_key: str, secret_key: str) -> dict:
     parsed = urlparse(url)
-    path   = parsed.path
-    query  = parsed.query or ""
+    path = parsed.path
+    query = parsed.query or ""
 
     nonce = _random_nonce()
-    date  = formatdate(localtime=False, usegmt=True)
-    ctype = ""                         # ← no Content-Type on GET, same as examples from the docs
+    date = formatdate(localtime=False, usegmt=True)
+    ctype = ""
 
     string_to_sign = "\n".join([
         method,
@@ -28,11 +32,10 @@ def build_headers(method: str, url: str, access_key: str, secret_key: str) -> di
         ctype,
         path,
         query
-    ]) + "\n"                          # trailing newline, matching examples from the docs
-    string_to_sign = string_to_sign.lower()
+    ]) + "\n"
 
     signature = base64.b64encode(
-        hmac.new(secret_key.encode(), string_to_sign.encode(), hashlib.sha256).digest()
+        hmac.new(secret_key.encode(), string_to_sign.lower().encode(), hashlib.sha256).digest()
     ).decode()
 
     return {
@@ -42,14 +45,16 @@ def build_headers(method: str, url: str, access_key: str, secret_key: str) -> di
         "Accept": "application/json"
     }
 
+def get_parts():
+    url = f"https://cad.onshape.com/api/parts/d/{DOCUMENT_ID}/w/{WORKSPACE_ID}/e/{ELEMENT_ID}"
+    headers = build_headers("GET", url, ACCESS_KEY, SECRET_KEY)
 
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
 
-def get_mass_properties():
-    document_id = "7b718c0dc3191700cd403fbd"
-    workspace_id = "8cec3b8c55257ff069fa9f7a"
-    element_id = "e255150d11253cea80cbf907"
-
-    url = f"https://cad.onshape.com/api/partstudios/d/{document_id}/w/{workspace_id}/e/{element_id}/massproperties"
+def get_mass_properties_for_part(part_id):
+    url = f"https://cad.onshape.com/api/parts/d/{DOCUMENT_ID}/w/{WORKSPACE_ID}/e/{ELEMENT_ID}/partid/{part_id}/massproperties"
     headers = build_headers("GET", url, ACCESS_KEY, SECRET_KEY)
 
     response = requests.get(url, headers=headers)
@@ -57,8 +62,17 @@ def get_mass_properties():
     return response.json()
 
 def main():
-    data = get_mass_properties()
-    print(data)
+    parts = get_parts()
+
+    print("Individual part volumes:\n")
+    for part in parts:
+        part_id = part.get("partId")
+        name = part.get("name")
+
+        mass_properties = get_mass_properties_for_part(part_id)
+        volume = mass_properties.get("bodies", {}).get(part_id, {}).get("volume", "N/A")
+
+        print(f"Part: {name} (ID: {part_id}) -> Volume: {volume}")
 
 if __name__ == "__main__":
     main()
