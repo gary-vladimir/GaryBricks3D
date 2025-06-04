@@ -70,9 +70,17 @@ def main():
         name = part.get("name")
 
         mass_properties = get_mass_properties_for_part(part_id)
-        volume = mass_properties.get("bodies", {}).get(part_id, {}).get("volume", "N/A")
+        volume_array = mass_properties.get("bodies", {}).get(part_id, {}).get("volume", [])
 
-        print(f"Part: {name} (ID: {part_id}) -> Volume: {volume}")
+        if volume_array and isinstance(volume_array, list):
+            avg_volume_m3 = sum(volume_array) / len(volume_array)
+            volume_mm3 = avg_volume_m3 * 1e9  # Convert to mm³
+            formatted_volume = f"{volume_mm3:.5f} mm³"
+        else:
+            formatted_volume = "N/A"
+
+        print(f"Part: {name} (ID: {part_id}) -> Volume: {formatted_volume}")
+
 
 if __name__ == "__main__":
     main()
