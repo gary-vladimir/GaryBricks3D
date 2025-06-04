@@ -59,13 +59,6 @@ def get_mass_properties():
 def main():
     data = get_mass_properties()
     print(data)
-    part_name = "Part 1"
-    part_data = data.get("bodies", {}).get(part_name)
-    if part_data:
-        volume = part_data.get("volume")
-        print(f"Volume of '{part_name}': {volume} m^3")
-    else:
-        print(f"Could not find mass properties for part '{part_name}'.")
 
 if __name__ == "__main__":
     main()
