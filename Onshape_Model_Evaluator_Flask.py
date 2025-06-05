@@ -37,9 +37,9 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
 #  Hard‑coded correct solution values – EDIT THESE
 # ────────────────────────────────────────────────────────────────
 SOLUTION = {
-    "volume": 123456.789,          # in mm³
-    "mass": 987.654,               # in g
-    "centroid": [10.0, 20.0, 30.0] # X, Y, Z in mm
+    "volume": 13.54812,          # in mm³
+    "mass": 0.10635,               # in g
+    "centroid": [0, 0, 0.3] # X, Y, Z in mm
 }
 
 # ────────────────────────────────────────────────────────────────
@@ -232,42 +232,75 @@ def evaluate():
 
     if contest_end is None or datetime.utcnow() >= contest_end:
         message = "Contest is not running."
-        return redirect(url_for('index'))
+        return redirect(url_for("index"))
 
-    link = request.form.get('link', '').strip()
+    link = request.form.get("link", "").strip()
     if not link:
         message = "Please provide an Onshape link."
-        return redirect(url_for('index'))
+        return redirect(url_for("index"))
 
     try:
         doc, ws, elem = parse_link(link)
+
         parts = get_parts(doc, ws, elem)
         if not parts:
             raise ValueError("No parts found in document.")
-
-        # For simplicity evaluate the *first* part only.
-        part = parts[0]
-        pid  = part.get('partId')
+        pid = parts[0]["partId"]
 
         props = get_mass_props(doc, ws, elem, pid)
-        body  = props.get('bodies', {}).get(pid, {})
+        body  = props.get("bodies", {}).get(pid, {})
 
-        volume   = body.get('volume',   props.get('volume',   0.0)) * 1e9      # m³ → mm³
-        mass     = body.get('mass',     props.get('mass',     0.0)) * 1000      # kg → g
-        centroid = body.get('centroid', props.get('centroid', [0, 0, 0]))
-        centroid_mm = [c * 1000 for c in centroid]
+        volume_array   = body.get("volume", [])
+        centroid_array = body.get("centroid", [])
+        mass_array     = body.get("mass", [])
 
-        # Exact comparison (adjust tolerances if needed)
-        if (abs(volume - SOLUTION['volume']) < 1e-6 and
-            abs(mass   - SOLUTION['mass'])   < 1e-6 and
-            all(abs(c - s) < 1e-6 for c, s in zip(centroid_mm, SOLUTION['centroid']))):
-            message = "<span style='color:green; font-size:20px;'>🎉 Congratulations – perfect match!</span>"
+        if not volume_array or not centroid_array or not mass_array:
+            volume_array   = props.get("volume", [])
+            centroid_array = props.get("centroid", [])
+            mass_array     = props.get("mass", [])
+
+        volumes   = volume_array if isinstance(volume_array, list) else []
+        centroids = chunk_list(centroid_array, 3) if isinstance(centroid_array, list) else []
+
+        if not (volumes and centroids and mass_array):
+            raise ValueError("Mass-properties unavailable for this part.")
+
+        volume_mm3 = volumes[0] * 1e9
+        x_mm, y_mm, z_mm = [
+            0.0 if abs(c * 1000) < 1e-8 else c * 1000
+            for c in centroids[0]
+        ]
+        mass_g      = mass_array[0] * 1000
+        centroid_mm = [x_mm, y_mm, z_mm]
+
+        tolerance = 1e-4
+        ok = (
+            abs(volume_mm3 - SOLUTION["volume"]) < tolerance and
+            abs(mass_g     - SOLUTION["mass"])   < tolerance and
+            all(abs(c - s) < tolerance for c, s in zip(centroid_mm, SOLUTION["centroid"]))
+        )
+
+        if ok:
+            message = (
+                "<span style='color:green; font-size:20px;'>🎉 "
+                "Congratulations – perfect match!</span>"
+            )
         else:
-            message = "<span style='color:red;'>❌ Mass‑properties do not match.</span>"
+            delta = (
+                f"Volume Δ: {volume_mm3 - SOLUTION['volume']:.6g} mm³, "
+                f"Mass Δ: {mass_g - SOLUTION['mass']:.6g} g, "
+                f"Centroid Δ: {[round(c - s, 6) for c, s in zip(centroid_mm, SOLUTION['centroid'])]}"
+            )
+            message = (
+                "<span style='color:red;'>❌ Mass-properties do not match.<br>"
+                + delta +
+                "</span>"
+            )
+
     except Exception as exc:
         message = f"<span style='color:red;'>Error: {exc}</span>"
 
-    return redirect(url_for('index'))
+    return redirect(url_for("index"))
 
 
 # ────────────────────────────────────────────────────────────────
